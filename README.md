@@ -1,5 +1,10 @@
 # Pixelate
 
+[![Language: C](https://img.shields.io/badge/language-C-00599C?logo=c&logoColor=white)](https://github.com/0v3rf3ar/pixelate)
+[![Release](https://img.shields.io/github/v/release/0v3rf3ar/pixelate?display_name=release&logo=github)](https://github.com/0v3rf3ar/pixelate/releases/latest)
+[![Release downloads](https://img.shields.io/github/downloads/0v3rf3ar/pixelate/total?logo=github&label=release%20downloads)](https://github.com/0v3rf3ar/pixelate/releases)
+[![License: Proprietary](https://img.shields.io/badge/license-proprietary-blue?logo=readthedocs&logoColor=white)](LICENSE)
+[![Repository](https://img.shields.io/badge/repository-0v3rf3ar%2Fpixelate-181717?logo=github)](https://github.com/0v3rf3ar/pixelate)
 [![Build binaries](https://github.com/0v3rf3ar/pixelate/actions/workflows/build.yml/badge.svg)](https://github.com/0v3rf3ar/pixelate/actions/workflows/build.yml)
 
 Pixelate renders images and videos as ASCII or colored blocks directly in a
@@ -65,7 +70,8 @@ Run `pixelate --help` for the complete command reference. Run
 
 - `-c`, `--color`: use each source pixel's color on its ASCII character.
 - `-b`, `--block`: draw solid, source-colored background blocks.
-- `-i`, `--invert`: reverse the ASCII brightness ramp.
+- `-i`, `--invert`: reverse the ASCII brightness ramp, or invert RGB colors in
+  block mode.
 - `--remove <chars>`: replace the listed ASCII characters with spaces.
 
 ### Video options

@@ -128,7 +128,7 @@ static void print_usage(const char *program) {
     printf("Display options (image and video play):\n");
     printf("  -c, --color          Use the source colors on ASCII characters\n");
     printf("  -b, --block          Draw colored background blocks instead of characters\n");
-    printf("  -i, --invert         Reverse the ASCII brightness ramp\n");
+    printf("  -i, --invert         Reverse ASCII brightness or block colors\n");
     printf("  --remove <chars>     Replace listed ASCII characters with spaces\n\n");
     printf("Sizing:\n");
     printf("  --size auto          Largest size that preserves the source aspect ratio\n");
@@ -251,6 +251,11 @@ static void render_cell(int r, int g, int b, int a, const Options *options) {
     char character = a == 0 ? ' ' :
         grayscale_to_ascii(rgb_to_gray(r, g, b), options);
     if (options->block && a != 0) {
+        if (options->invert) {
+            r = 255 - r;
+            g = 255 - g;
+            b = 255 - b;
+        }
         printf("\x1b[48;2;%d;%d;%dm ", r, g, b);
     } else if (options->color && character != ' ') {
         printf("\x1b[38;2;%d;%d;%dm%c", r, g, b, character);
