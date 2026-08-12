@@ -1,5 +1,7 @@
 # Pixelate
 
+[![Build binaries](https://github.com/0v3rf3ar/pixelate/actions/workflows/build.yml/badge.svg)](https://github.com/0v3rf3ar/pixelate/actions/workflows/build.yml)
+
 Pixelate renders images and videos as ASCII or colored blocks directly in a
 terminal. It supports Linux, macOS, and Windows terminals with 24-bit ANSI
 color.
@@ -13,6 +15,19 @@ color.
   Escape or Ctrl+C handling.
 - Preserve aspect ratio automatically or fill the available terminal area.
 - Run on Linux, macOS, and Windows from one C99 codebase.
+
+## Download
+
+Download the latest prebuilt binary for your system:
+
+| System | Architecture | Download |
+| --- | --- | --- |
+| Linux | x86-64 | [pixelate-linux-amd64.zip](https://github.com/0v3rf3ar/pixelate/releases/latest/download/pixelate-linux-amd64.zip) |
+| Linux | ARM64 | [pixelate-linux-arm64.zip](https://github.com/0v3rf3ar/pixelate/releases/latest/download/pixelate-linux-arm64.zip) |
+| Windows | x86-64 | [pixelate-windows-amd64.zip](https://github.com/0v3rf3ar/pixelate/releases/latest/download/pixelate-windows-amd64.zip) |
+| macOS | Apple silicon | [pixelate-macos-silicon.zip](https://github.com/0v3rf3ar/pixelate/releases/latest/download/pixelate-macos-silicon.zip) |
+
+For other systems and architectures, follow the build instructions below.
 
 ## Build
 
