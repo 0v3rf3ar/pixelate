@@ -1,11 +1,9 @@
 # Pixelate
 
+[![Repository](https://img.shields.io/badge/repository-0v3rf3ar%2Fpixelate-181717?logo=github)](https://github.com/0v3rf3ar/pixelate)
+[![License: Proprietary](https://img.shields.io/badge/license-proprietary-blue?logo=readthedocs&logoColor=white)](LICENSE)
 [![Language: C](https://img.shields.io/badge/language-C-00599C?logo=c&logoColor=white)](https://github.com/0v3rf3ar/pixelate)
 [![Release](https://img.shields.io/github/v/release/0v3rf3ar/pixelate?display_name=release&logo=github)](https://github.com/0v3rf3ar/pixelate/releases/latest)
-[![Release downloads](https://img.shields.io/github/downloads/0v3rf3ar/pixelate/total?logo=github&label=release%20downloads)](https://github.com/0v3rf3ar/pixelate/releases)
-[![License: Proprietary](https://img.shields.io/badge/license-proprietary-blue?logo=readthedocs&logoColor=white)](LICENSE)
-[![Repository](https://img.shields.io/badge/repository-0v3rf3ar%2Fpixelate-181717?logo=github)](https://github.com/0v3rf3ar/pixelate)
-[![Build binaries](https://github.com/0v3rf3ar/pixelate/actions/workflows/build.yml/badge.svg)](https://github.com/0v3rf3ar/pixelate/actions/workflows/build.yml)
 
 Pixelate renders images and videos as ASCII or colored blocks directly in a
 terminal. It supports Linux, macOS, and Windows terminals with 24-bit ANSI
@@ -25,12 +23,12 @@ color.
 
 Download the latest prebuilt binary for your system:
 
-| System | Architecture | Download |
-| --- | --- | --- |
-| Linux | x86-64 | [pixelate-linux-amd64.zip](https://github.com/0v3rf3ar/pixelate/releases/latest/download/pixelate-linux-amd64.zip) |
-| Linux | ARM64 | [pixelate-linux-arm64.zip](https://github.com/0v3rf3ar/pixelate/releases/latest/download/pixelate-linux-arm64.zip) |
-| Windows | x86-64 | [pixelate-windows-amd64.zip](https://github.com/0v3rf3ar/pixelate/releases/latest/download/pixelate-windows-amd64.zip) |
-| macOS | Apple silicon | [pixelate-macos-silicon.zip](https://github.com/0v3rf3ar/pixelate/releases/latest/download/pixelate-macos-silicon.zip) |
+| System  | Architecture  | Download                                                                                                               |
+| ------- | ------------- | ---------------------------------------------------------------------------------------------------------------------- |
+| Linux   | x86-64        | [pixelate-linux-amd64.zip](https://github.com/0v3rf3ar/pixelate/releases/latest/download/pixelate-linux-amd64.zip)     |
+| Linux   | ARM64         | [pixelate-linux-arm64.zip](https://github.com/0v3rf3ar/pixelate/releases/latest/download/pixelate-linux-arm64.zip)     |
+| Windows | x86-64        | [pixelate-windows-amd64.zip](https://github.com/0v3rf3ar/pixelate/releases/latest/download/pixelate-windows-amd64.zip) |
+| macOS   | Apple silicon | [pixelate-macos-silicon.zip](https://github.com/0v3rf3ar/pixelate/releases/latest/download/pixelate-macos-silicon.zip) |
 
 For other systems and architectures, follow the build instructions below.
 
