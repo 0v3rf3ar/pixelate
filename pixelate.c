@@ -15,13 +15,16 @@
 #define popen _popen
 #define pclose _pclose
 #else
+#include <fcntl.h>
 #include <sys/select.h>
 #include <sys/ioctl.h>
+#include <sys/types.h>
+#include <sys/wait.h>
 #include <termios.h>
 #include <unistd.h>
 #endif
 
-#define PIXELATE_VERSION_VALUE "v1.0.0"
+#define PIXELATE_VERSION_VALUE "v1.0.1"
 #define PIXELATE_DEVELOPER_VALUE "s3p"
 #define PIXELATE_GITHUB_VALUE "https://github.com/0v3rf3ar/pixelate"
 #define PIXELATE_COPYRIGHT_VALUE "Copyright (c) 2026 s3p. All rights reserved."
@@ -50,6 +53,7 @@ static const char PIXELATE_BINARY_METADATA[] =
 static const char *ASCII_CHARS = " .:-=+*M%@";
 static const unsigned char ASV1_MAGIC[4] = {'A', 'S', 'V', '1'};
 static const unsigned char ASV2_MAGIC[4] = {'A', 'S', 'V', '2'};
+static const unsigned char ASV3_MAGIC[4] = {'A', 'S', 'V', '3'};
 static volatile sig_atomic_t playback_interrupted = 0;
 
 static void handle_playback_signal(int signal_number) {
@@ -62,6 +66,7 @@ typedef struct {
     int color;
     int block;
     int encode_video;
+    int include_audio;
     unsigned char excluded[256];
     const char *input_path;
     const char *output_path;
@@ -128,10 +133,11 @@ static void print_usage(const char *program) {
     printf("Sizing:\n");
     printf("  --size auto          Largest size that preserves the source aspect ratio\n");
     printf("  --size fit           Fill the terminal; video playback follows resizes live\n");
-    printf("  --size WxH           Image: source block size; encode: ASV frame size\n");
+    printf("  --size WxH           Output image or encoded ASV frame dimensions\n");
     printf("  --size native        Play an ASV at its stored dimensions\n\n");
     printf("Video encode options:\n");
     printf("  --fps <12-30>        Output frame rate (default: 24)\n");
+    printf("  -a, --audio          Include the source audio in the ASV file\n");
     printf("  FFmpeg handles GIF, MOV, MKV, MP4, WebM, AVI, and other formats.\n\n");
     printf("Other options:\n");
     printf("  -h, --help           Show this help\n");
@@ -145,12 +151,33 @@ static void print_usage(const char *program) {
 static int terminal_size(int *columns, int *rows) {
 #ifdef _WIN32
     CONSOLE_SCREEN_BUFFER_INFO info;
-    if (!GetConsoleScreenBufferInfo(GetStdHandle(STD_OUTPUT_HANDLE), &info)) return 0;
+    HANDLE handle = GetStdHandle(STD_OUTPUT_HANDLE);
+    HANDLE terminal = INVALID_HANDLE_VALUE;
+    if (!GetConsoleScreenBufferInfo(handle, &info)) {
+        terminal = CreateFileA("CONOUT$", GENERIC_READ | GENERIC_WRITE,
+                               FILE_SHARE_READ | FILE_SHARE_WRITE, NULL,
+                               OPEN_EXISTING, 0, NULL);
+        if (terminal == INVALID_HANDLE_VALUE ||
+            !GetConsoleScreenBufferInfo(terminal, &info)) {
+            if (terminal != INVALID_HANDLE_VALUE) CloseHandle(terminal);
+            return 0;
+        }
+        CloseHandle(terminal);
+    }
     *columns = info.srWindow.Right - info.srWindow.Left + 1;
     *rows = info.srWindow.Bottom - info.srWindow.Top + 1;
 #else
     struct winsize size;
-    if (ioctl(STDOUT_FILENO, TIOCGWINSZ, &size) != 0 || !size.ws_col || !size.ws_row) return 0;
+    if (ioctl(STDOUT_FILENO, TIOCGWINSZ, &size) != 0 ||
+        !size.ws_col || !size.ws_row) {
+        int terminal = open("/dev/tty", O_RDONLY);
+        if (terminal < 0 || ioctl(terminal, TIOCGWINSZ, &size) != 0 ||
+            !size.ws_col || !size.ws_row) {
+            if (terminal >= 0) close(terminal);
+            return 0;
+        }
+        close(terminal);
+    }
     *columns = size.ws_col;
     *rows = size.ws_row;
 #endif
@@ -308,6 +335,9 @@ static int parse_subcommand(int argc, char **argv, Options *options) {
             if (++i >= argc || !parse_fps(argv[i], &options->fps)) {
                 fprintf(stderr, "--fps must be between 12 and 30.\n"); return -1;
             }
+        } else if ((!strcmp(argv[i], "-a") || !strcmp(argv[i], "--audio")) &&
+                   options->encode_video) {
+            options->include_audio = 1;
         } else if (!parse_display_option(argc, argv, &i, options)) {
             fprintf(stderr, "Unknown option '%s'. Try --help.\n", argv[i]); return -1;
         }
@@ -340,12 +370,14 @@ static int parse_options(int argc, char **argv, Options *options) {
         else if (!strcmp(arg, "-c") || !strcmp(arg, "--color")) options->color = 1;
         else if (!strcmp(arg, "-b") || !strcmp(arg, "--block")) options->block = 1;
         else if (!strcmp(arg, "--encode-video")) options->encode_video = 1;
+        else if (!strcmp(arg, "--audio")) options->include_audio = 1;
         else if (arg[0] == '-' && arg[1] && arg[1] != '-') {
             const unsigned char *p = (const unsigned char *)arg + 1;
             while (*p) {
                 if (*p == 'i') options->invert = 1;
                 else if (*p == 'c') options->color = 1;
                 else if (*p == 'b') options->block = 1;
+                else if (*p == 'a') options->include_audio = 1;
                 else options->excluded[*p] = 1;
                 ++p;
             }
@@ -521,6 +553,37 @@ static int probe_video_size(const char *quoted_path, int *width, int *height) {
            *width > 0 && *height > 0;
 }
 
+static int append_audio_stream(FILE *output, const char *quoted_path,
+                               uint32_t *audio_offset, uint32_t *audio_size) {
+    char command[4096];
+    unsigned char buffer[16384];
+    FILE *pipe;
+    long offset;
+    uint64_t total = 0;
+    size_t count;
+    if (fseek(output, 0, SEEK_END) != 0 || (offset = ftell(output)) < 0 ||
+        (uint64_t)offset > UINT32_MAX) return 0;
+    if (snprintf(command, sizeof(command),
+        "ffmpeg -v error -i %s -map 0:a:0 -vn -c:a libmp3lame -q:a 4 -f mp3 -",
+        quoted_path) >= (int)sizeof(command)) return 0;
+#ifdef _WIN32
+    pipe = popen(command, "rb");
+#else
+    pipe = popen(command, "r");
+#endif
+    if (!pipe) return 0;
+    while ((count = fread(buffer, 1, sizeof(buffer), pipe)) != 0) {
+        if (total + count > UINT32_MAX || fwrite(buffer, 1, count, output) != count) {
+            pclose(pipe); return 0;
+        }
+        total += count;
+    }
+    if (pclose(pipe) != 0 || total == 0) return 0;
+    *audio_offset = (uint32_t)offset;
+    *audio_size = (uint32_t)total;
+    return 1;
+}
+
 static int encode_video(const Options *options) {
     char quoted[2048], command[4096];
     FILE *pipe = NULL, *output = NULL;
@@ -529,6 +592,7 @@ static int encode_video(const Options *options) {
     int output_width = options->first_value, output_height = options->second_value;
     size_t frame_size;
     uint32_t frame_count = 0;
+    uint32_t audio_offset = 0, audio_size = 0;
     int result = EXIT_FAILURE;
 
     if (!shell_quote(options->input_path, quoted, sizeof(quoted))) {
@@ -563,10 +627,12 @@ static int encode_video(const Options *options) {
     previous = (uint16_t *)malloc(frame_size / 3u * sizeof(*previous));
     if (!output || !frame || !previous) { fprintf(stderr, "Cannot create ASV output.\n"); goto cleanup; }
     memset(previous, 0xff, frame_size / 3u * sizeof(*previous));
-    if (fwrite(ASV2_MAGIC, 1, 4, output) != 4 ||
+    if (fwrite(options->include_audio ? ASV3_MAGIC : ASV2_MAGIC, 1, 4, output) != 4 ||
         !write_u32(output, (uint32_t)output_width) ||
         !write_u32(output, (uint32_t)output_height) ||
-        !write_u32(output, (uint32_t)options->fps) || !write_u32(output, 0)) goto cleanup;
+        !write_u32(output, (uint32_t)options->fps) || !write_u32(output, 0) ||
+        (options->include_audio &&
+         (!write_u32(output, 0) || !write_u32(output, 0)))) goto cleanup;
 #ifdef _WIN32
     pipe = popen(command, "rb");
 #else
@@ -582,8 +648,18 @@ static int encode_video(const Options *options) {
     if (frame_count == 0 || fseek(output, 16, SEEK_SET) != 0 || !write_u32(output, frame_count)) {
         fprintf(stderr, "No complete video frames were encoded.\n"); goto cleanup;
     }
-    printf("Created %s: %u frames, %dx%d, %d FPS\n", options->output_path,
-           frame_count, output_width, output_height, options->fps);
+    if (options->include_audio) {
+        if (!append_audio_stream(output, quoted, &audio_offset, &audio_size)) {
+            fprintf(stderr, "Could not encode source audio. Ensure it has an audio stream "
+                            "and FFmpeg includes MP3 support.\n");
+            goto cleanup;
+        }
+        if (fseek(output, 20, SEEK_SET) != 0 || !write_u32(output, audio_offset) ||
+            !write_u32(output, audio_size)) goto cleanup;
+    }
+    printf("Created %s: %u frames, %dx%d, %d FPS%s\n", options->output_path,
+           frame_count, output_width, output_height, options->fps,
+           options->include_audio ? ", audio included" : "");
     result = EXIT_SUCCESS;
 cleanup:
     if (pipe) pclose(pipe);
@@ -594,8 +670,9 @@ cleanup:
     return result;
 }
 
-enum PlaybackKey { PLAYBACK_KEY_NONE, PLAYBACK_KEY_SPACE,
-                   PLAYBACK_KEY_LEFT, PLAYBACK_KEY_RIGHT };
+enum PlaybackKey { PLAYBACK_KEY_NONE, PLAYBACK_KEY_ESCAPE, PLAYBACK_KEY_SPACE,
+                   PLAYBACK_KEY_LEFT, PLAYBACK_KEY_RIGHT,
+                   PLAYBACK_KEY_UP, PLAYBACK_KEY_DOWN };
 
 typedef struct {
 #ifndef _WIN32
@@ -638,11 +715,14 @@ static enum PlaybackKey playback_key(int wait_ms) {
     }
     {
         int key = _getch();
+        if (key == 0x1b) return PLAYBACK_KEY_ESCAPE;
         if (key == ' ') return PLAYBACK_KEY_SPACE;
         if (key == 0 || key == 0xe0) {
             key = _getch();
             if (key == 75) return PLAYBACK_KEY_LEFT;
             if (key == 77) return PLAYBACK_KEY_RIGHT;
+            if (key == 72) return PLAYBACK_KEY_UP;
+            if (key == 80) return PLAYBACK_KEY_DOWN;
         }
     }
 #else
@@ -657,9 +737,14 @@ static enum PlaybackKey playback_key(int wait_ms) {
     count = (int)read(STDIN_FILENO, bytes, sizeof(bytes));
     for (int i = 0; i < count; ++i) {
         if (bytes[i] == ' ') return PLAYBACK_KEY_SPACE;
+        if (bytes[i] == 0x1b &&
+            !(i + 2 < count && bytes[i + 1] == '['))
+            return PLAYBACK_KEY_ESCAPE;
         if (bytes[i] == 0x1b && i + 2 < count && bytes[i + 1] == '[') {
             if (bytes[i + 2] == 'D') return PLAYBACK_KEY_LEFT;
             if (bytes[i + 2] == 'C') return PLAYBACK_KEY_RIGHT;
+            if (bytes[i + 2] == 'A') return PLAYBACK_KEY_UP;
+            if (bytes[i + 2] == 'B') return PLAYBACK_KEY_DOWN;
         }
     }
 #endif
@@ -678,6 +763,113 @@ static double playback_time(void) {
     clock_gettime(CLOCK_MONOTONIC, &now);
     return (double)now.tv_sec + (double)now.tv_nsec / 1000000000.0;
 #endif
+}
+
+typedef struct {
+    char path[1024];
+    int active;
+    int volume_level;
+#ifdef _WIN32
+    PROCESS_INFORMATION process;
+#else
+    pid_t pid;
+#endif
+} AudioPlayer;
+
+static int extract_audio(FILE *asv, uint32_t offset, uint32_t size,
+                         AudioPlayer *audio) {
+    unsigned char buffer[16384];
+    FILE *output = NULL;
+    uint32_t remaining = size;
+#ifdef _WIN32
+    char temporary_directory[MAX_PATH];
+    if (!GetTempPathA((DWORD)sizeof(temporary_directory), temporary_directory) ||
+        !GetTempFileNameA(temporary_directory, "pxa", 0, audio->path)) return 0;
+    output = fopen(audio->path, "wb");
+#else
+    int descriptor;
+    strcpy(audio->path, "/tmp/pixelate-audio-XXXXXX");
+    descriptor = mkstemp(audio->path);
+    if (descriptor >= 0) output = fdopen(descriptor, "wb");
+    if (descriptor >= 0 && !output) close(descriptor);
+#endif
+    if (!output || fseek(asv, (long)offset, SEEK_SET) != 0) goto failure;
+    while (remaining) {
+        size_t wanted = remaining < sizeof(buffer) ? remaining : sizeof(buffer);
+        size_t count = fread(buffer, 1, wanted, asv);
+        if (count != wanted || fwrite(buffer, 1, count, output) != count) goto failure;
+        remaining -= (uint32_t)count;
+    }
+    if (fclose(output) != 0) { output = NULL; goto failure; }
+    return 1;
+failure:
+    if (output) fclose(output);
+    if (audio->path[0]) remove(audio->path);
+    audio->path[0] = '\0';
+    return 0;
+}
+
+static int audio_start(AudioPlayer *audio, double position) {
+    char seconds[64], volume[16];
+    if (!audio->path[0]) return 1;
+    if (position < 0.0) position = 0.0;
+    snprintf(seconds, sizeof(seconds), "%.3f", position);
+    snprintf(volume, sizeof(volume), "%d", audio->volume_level * 10);
+#ifdef _WIN32
+    STARTUPINFOA startup;
+    char command[4096];
+    memset(&startup, 0, sizeof(startup));
+    memset(&audio->process, 0, sizeof(audio->process));
+    startup.cb = sizeof(startup);
+    startup.dwFlags = STARTF_USESHOWWINDOW;
+    startup.wShowWindow = SW_HIDE;
+    if (snprintf(command, sizeof(command),
+        "ffplay -v error -nodisp -autoexit -volume %s -ss %s \"%s\"",
+        volume, seconds, audio->path) >= (int)sizeof(command) ||
+        !CreateProcessA(NULL, command, NULL, NULL, FALSE, CREATE_NO_WINDOW,
+                        NULL, NULL, &startup, &audio->process)) return 0;
+    CloseHandle(audio->process.hThread);
+#else
+    audio->pid = fork();
+    if (audio->pid < 0) return 0;
+    if (audio->pid == 0) {
+        FILE *null_file = fopen("/dev/null", "r+");
+        if (null_file) {
+            dup2(fileno(null_file), STDIN_FILENO);
+            dup2(fileno(null_file), STDOUT_FILENO);
+            dup2(fileno(null_file), STDERR_FILENO);
+        }
+        execlp("ffplay", "ffplay", "-v", "error", "-nodisp", "-autoexit",
+               "-volume", volume, "-ss", seconds, audio->path, (char *)NULL);
+        _exit(127);
+    }
+#endif
+    audio->active = 1;
+    return 1;
+}
+
+static void audio_stop(AudioPlayer *audio) {
+    if (!audio->active) return;
+#ifdef _WIN32
+    TerminateProcess(audio->process.hProcess, 0);
+    WaitForSingleObject(audio->process.hProcess, 3000);
+    CloseHandle(audio->process.hProcess);
+#else
+    kill(audio->pid, SIGTERM);
+    while (waitpid(audio->pid, NULL, 0) < 0 && errno == EINTR) { }
+#endif
+    audio->active = 0;
+}
+
+static int audio_restart(AudioPlayer *audio, double position) {
+    audio_stop(audio);
+    return audio_start(audio, position);
+}
+
+static void audio_cleanup(AudioPlayer *audio) {
+    audio_stop(audio);
+    if (audio->path[0]) remove(audio->path);
+    audio->path[0] = '\0';
 }
 
 static enum PlaybackKey wait_for_playback_key(double deadline) {
@@ -719,6 +911,8 @@ static int play_video(const Options *options) {
     unsigned char magic[4], *frame = NULL;
     uint16_t *previous = NULL;
     uint32_t width, height, fps, frames;
+    uint32_t audio_offset = 0, audio_size = 0;
+    long video_data_offset = 20;
     size_t frame_size;
     int previous_output_width = 0, previous_output_height = 0;
     int result = EXIT_FAILURE;
@@ -730,25 +924,39 @@ static int play_video(const Options *options) {
     uint32_t current = 0;
     double next_frame_time = 0.0;
     int paused = 0;
+    int compressed = 0;
+    AudioPlayer audio = {0};
 #ifndef _WIN32
     struct sigaction interrupt_action, old_interrupt_action;
     struct sigaction terminate_action, old_terminate_action;
 #endif
     if (!file) { fprintf(stderr, "Cannot open %s\n", options->input_path); return result; }
+    audio.volume_level = 10;
     if (fread(magic, 1, 4, file) != 4 ||
-        (memcmp(magic, ASV1_MAGIC, 4) && memcmp(magic, ASV2_MAGIC, 4)) ||
+        (memcmp(magic, ASV1_MAGIC, 4) && memcmp(magic, ASV2_MAGIC, 4) &&
+         memcmp(magic, ASV3_MAGIC, 4)) ||
         !read_u32(file, &width) || !read_u32(file, &height) ||
         !read_u32(file, &fps) || !read_u32(file, &frames) || !width || !height ||
         fps < 12 || fps > 30 || width > SIZE_MAX / height / 3u) {
         fprintf(stderr, "Invalid or unsupported ASV file.\n"); goto cleanup;
     }
+    compressed = !memcmp(magic, ASV2_MAGIC, 4) || !memcmp(magic, ASV3_MAGIC, 4);
+    if (!memcmp(magic, ASV3_MAGIC, 4)) {
+        video_data_offset = 28;
+        if (!read_u32(file, &audio_offset) || !read_u32(file, &audio_size) ||
+            !audio_offset || !audio_size || audio_offset < (uint32_t)video_data_offset ||
+            !extract_audio(file, audio_offset, audio_size, &audio) ||
+            fseek(file, video_data_offset, SEEK_SET) != 0) {
+            fprintf(stderr, "Invalid or damaged ASV3 audio stream.\n"); goto cleanup;
+        }
+    }
     frame_size = (size_t)width * height * 3u;
     frame = (unsigned char *)malloc(frame_size);
-    if (!memcmp(magic, ASV2_MAGIC, 4)) {
+    if (compressed) {
         previous = (uint16_t *)malloc(frame_size / 3u * sizeof(*previous));
         if (previous) memset(previous, 0xff, frame_size / 3u * sizeof(*previous));
     }
-    if (!frame || (!memcmp(magic, ASV2_MAGIC, 4) && !previous)) {
+    if (!frame || (compressed && !previous)) {
         fprintf(stderr, "Not enough memory for video frame.\n"); goto cleanup;
     }
     checkpoint_span = fps * 5u;
@@ -778,6 +986,10 @@ static int play_video(const Options *options) {
     fputs("\x1b[?1049h\x1b[2J\x1b[H\x1b[?25l\x1b[?7l", stdout);
     playback_state_active = 1;
     playback_input_start(&input);
+    if (!audio_start(&audio, 0.0)) {
+        fprintf(stderr, "Cannot start ffplay for ASV audio. Is it installed?\n");
+        goto cleanup;
+    }
     next_frame_time = playback_time();
     while (current < frames) {
         if (previous && current % checkpoint_span == 0) {
@@ -794,9 +1006,9 @@ static int play_video(const Options *options) {
                 }
             }
         }
-        if ((!memcmp(magic, ASV1_MAGIC, 4) &&
+        if ((!compressed &&
              fread(frame, 1, frame_size, file) != frame_size) ||
-            (!memcmp(magic, ASV2_MAGIC, 4) &&
+            (compressed &&
              !read_compressed_frame(file, frame, previous, frame_size / 3u))) {
             fprintf(stderr, "\nASV file ended before its declared frame count.\n"); goto cleanup;
         }
@@ -845,9 +1057,35 @@ static int play_video(const Options *options) {
             enum PlaybackKey key = paused ? playback_key(50) :
                 wait_for_playback_key(next_frame_time);
             if (playback_interrupted) break;
+            if (key == PLAYBACK_KEY_ESCAPE) {
+                playback_interrupted = 1;
+                break;
+            }
             if (key == PLAYBACK_KEY_SPACE) {
                 paused = !paused;
-                if (!paused) next_frame_time = playback_time();
+                if (paused) {
+                    audio_stop(&audio);
+                } else {
+                    if (!audio_start(&audio, (double)current / fps)) {
+                        fprintf(stderr, "\nCannot resume ASV audio.\n"); goto cleanup;
+                    }
+                    next_frame_time = playback_time();
+                }
+                continue;
+            }
+            if (key == PLAYBACK_KEY_UP || key == PLAYBACK_KEY_DOWN) {
+                int new_level = audio.volume_level +
+                    (key == PLAYBACK_KEY_UP ? 1 : -1);
+                if (new_level < 1) new_level = 1;
+                if (new_level > 10) new_level = 10;
+                if (new_level != audio.volume_level) {
+                    audio.volume_level = new_level;
+                    if (!paused && audio.path[0] &&
+                        !audio_restart(&audio, (double)current / fps)) {
+                        fprintf(stderr, "\nCannot change ASV audio volume.\n");
+                        goto cleanup;
+                    }
+                }
                 continue;
             }
             if (key == PLAYBACK_KEY_LEFT || key == PLAYBACK_KEY_RIGHT) {
@@ -866,11 +1104,12 @@ static int play_video(const Options *options) {
                             current = slot * checkpoint_span;
                         } else {
                             memset(previous, 0xff, frame_size / 3u * sizeof(*previous));
-                            if (fseek(file, 20, SEEK_SET) != 0) goto cleanup;
+                            if (fseek(file, video_data_offset, SEEK_SET) != 0) goto cleanup;
                             current = 0;
                         }
                     } else {
-                        if (fseek(file, 20 + (long)((size_t)target * frame_size), SEEK_SET) != 0)
+                        if (fseek(file, video_data_offset +
+                                  (long)((size_t)target * frame_size), SEEK_SET) != 0)
                             goto cleanup;
                         current = target;
                     }
@@ -884,6 +1123,9 @@ static int play_video(const Options *options) {
                         goto cleanup;
                     ++current;
                 }
+                if (!paused && !audio_restart(&audio, (double)target / fps)) {
+                    fprintf(stderr, "\nCannot seek ASV audio.\n"); goto cleanup;
+                }
                 next_frame_time = playback_time();
                 break;
             }
@@ -892,6 +1134,7 @@ static int play_video(const Options *options) {
     }
     result = EXIT_SUCCESS;
 cleanup:
+    audio_cleanup(&audio);
     playback_input_stop(&input);
     if (playback_state_active) {
         /* Restore wrap, styling, cursor, and the original screen on every exit. */
@@ -919,18 +1162,21 @@ static int render_image(Options *options) {
         fprintf(stderr, "Failed to load image: %s (%s)\n", options->input_path,
                 stbi_failure_reason()); return EXIT_FAILURE;
     }
-    if (options->automatic_size || options->fit_size) {
-        int output_columns, output_rows;
-        if (options->fit_size) {
-            if (!terminal_size(&output_columns, &output_rows)) {
-                fprintf(stderr, "Cannot determine terminal dimensions for fit sizing.\n");
+    {
+        int output_columns = options->first_value;
+        int output_rows = options->second_value;
+        if (options->automatic_size || options->fit_size) {
+            if (options->fit_size) {
+                if (!terminal_size(&output_columns, &output_rows)) {
+                    fprintf(stderr, "Cannot determine terminal dimensions for fit sizing.\n");
+                    stbi_image_free(image); return EXIT_FAILURE;
+                }
+                --output_rows;
+            } else if (!fit_cells(width, height, options->block,
+                                  &output_columns, &output_rows)) {
+                fprintf(stderr, "Cannot determine terminal dimensions for auto sizing.\n");
                 stbi_image_free(image); return EXIT_FAILURE;
             }
-            --output_rows;
-        } else if (!fit_cells(width, height, options->block,
-                              &output_columns, &output_rows)) {
-            fprintf(stderr, "Cannot determine terminal dimensions for auto sizing.\n");
-            stbi_image_free(image); return EXIT_FAILURE;
         }
         for (int y = 0; y < output_rows; ++y) {
             int source_y = (int)((int64_t)y * height / output_rows);
@@ -944,23 +1190,6 @@ static int render_image(Options *options) {
         }
         stbi_image_free(image); return EXIT_SUCCESS;
     }
-    for (int y = 0; y < height; y += options->second_value) {
-        for (int x = 0; x < width; x += options->first_value) {
-            unsigned long sum[4] = {0, 0, 0, 0}, count = 0;
-            for (int by = 0; by < options->second_value && y + by < height; ++by) {
-                for (int bx = 0; bx < options->first_value && x + bx < width; ++bx) {
-                    const unsigned char *p = image +
-                        (((size_t)(y + by) * width + (size_t)(x + bx)) * 4u);
-                    for (int channel = 0; channel < 4; ++channel) sum[channel] += p[channel];
-                    ++count;
-                }
-            }
-            render_cell((int)(sum[0] / count), (int)(sum[1] / count),
-                        (int)(sum[2] / count), (int)(sum[3] / count), options);
-        }
-        finish_row(options);
-    }
-    stbi_image_free(image); return EXIT_SUCCESS;
 }
 
 int main(int argc, char **argv) {

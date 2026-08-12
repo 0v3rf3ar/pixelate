@@ -7,9 +7,10 @@ color.
 ## Features
 
 - Render common image formats as plain ASCII, true-color ASCII, or color blocks.
-- Encode videos to Pixelate's compact `.asv` format with FFmpeg.
+- Encode videos and optional audio to Pixelate's compact `.asv` format with
+  FFmpeg.
 - Play `.asv` files with pause, seek, live terminal resizing, and graceful
-  Ctrl+C handling.
+  Escape or Ctrl+C handling.
 - Preserve aspect ratio automatically or fill the available terminal area.
 - Run on Linux, macOS, and Windows from one C99 codebase.
 
@@ -37,7 +38,7 @@ Windows generator, it is normally `build/Release/pixelate.exe`.
 ./build/pixelate image photo.png --size fit --block
 
 # Encode and play a video
-./build/pixelate video encode input.mp4 output.asv --size auto --fps 24
+./build/pixelate video encode input.mp4 output.asv --size auto --fps 24 --audio
 ./build/pixelate video play output.asv --color --size auto
 ./build/pixelate video play output.asv --block --size fit
 ```
@@ -52,16 +53,23 @@ Run `pixelate --help` for the complete command reference. Run
 - `-i`, `--invert`: reverse the ASCII brightness ramp.
 - `--remove <chars>`: replace the listed ASCII characters with spaces.
 
+### Video options
+
+- `-a`, `--audio`: include the source audio when encoding an ASV file.
+- `--fps <12-30>`: set the encoded video frame rate.
+
 ### Sizing
 
 - `--size auto`: use the largest size that preserves the source aspect ratio.
 - `--size fit`: fill the terminal; video playback follows terminal resizing.
-- `--size WxH`: set the image sample block or encoded ASV frame dimensions.
+- `--size WxH`: set the output image or encoded ASV frame dimensions.
 - `--size native`: play an ASV file at its stored dimensions.
 
-Video encoding accepts frame rates from 12 to 30 FPS. ASV playback has no
-audio; press Space to pause or resume, and use Left or Right to seek five
-seconds.
+Audio-enabled ASV3 files play their embedded audio automatically and require
+`ffplay` at playback time. Press Space to pause or resume, and use Left or Right
+to seek five seconds; audio follows all playback controls. Use Up and Down to
+adjust audio through 10 volume levels. Press Escape or Ctrl+C to exit
+gracefully. ASV1 and ASV2 files remain fully supported.
 
 ## Credits
 
