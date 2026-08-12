@@ -1,0 +1,35 @@
+#include <winver.h>
+
+VS_VERSION_INFO VERSIONINFO
+ FILEVERSION 1,0,0,0
+ PRODUCTVERSION 1,0,0,0
+ FILEFLAGSMASK VS_FFI_FILEFLAGSMASK
+#ifdef _DEBUG
+ FILEFLAGS VS_FF_DEBUG
+#else
+ FILEFLAGS 0x0L
+#endif
+ FILEOS VOS_NT_WINDOWS32
+ FILETYPE VFT_APP
+ FILESUBTYPE VFT2_UNKNOWN
+BEGIN
+    BLOCK "StringFileInfo"
+    BEGIN
+        BLOCK "040904B0"
+        BEGIN
+            VALUE "CompanyName", "s3p\0"
+            VALUE "FileDescription", "Pixelate terminal image and video renderer\0"
+            VALUE "FileVersion", "v1.0.0\0"
+            VALUE "InternalName", "pixelate\0"
+            VALUE "LegalCopyright", "Copyright (c) 2026 s3p. All rights reserved.\0"
+            VALUE "OriginalFilename", "pixelate.exe\0"
+            VALUE "ProductName", "Pixelate\0"
+            VALUE "ProductVersion", "v1.0.0\0"
+            VALUE "Comments", "Developer: s3p | GitHub: https://github.com/0v3rf3ar/pixelate\0"
+        END
+    END
+    BLOCK "VarFileInfo"
+    BEGIN
+        VALUE "Translation", 0x0409, 1200
+    END
+END

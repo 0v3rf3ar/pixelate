@@ -1,0 +1,28 @@
+# CMake build trees and generated files
+build/
+build-*/
+CMakeFiles/
+CMakeCache.txt
+cmake_install.cmake
+compile_commands.json
+Makefile
+
+# Compiled objects, libraries, and executables
+*.o
+*.obj
+*.a
+*.lib
+*.so
+*.dylib
+*.dll
+*.exe
+pixelate
+
+# Generated Pixelate video files
+*.asv
+
+# Editor and operating-system files
+*.swp
+*.swo
+*~
+.DS_Store

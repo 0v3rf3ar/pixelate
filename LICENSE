@@ -1,0 +1,39 @@
+PIXELATE PROPRIETARY LICENSE
+
+Copyright (c) 2026 s3p. All rights reserved.
+
+Pixelate and all associated source code, binary files, documentation, assets,
+and other materials (collectively, the "Software") are proprietary and
+confidential works owned by s3p.
+
+No permission or license is granted to any person or entity to use, copy,
+reproduce, modify, adapt, translate, publish, distribute, sublicense, sell,
+rent, lease, transmit, disclose, reverse engineer, decompile, disassemble,
+create derivative works from, or otherwise exploit any part of the Software,
+in source or binary form, for any purpose.
+
+Access to or possession of the Software does not transfer ownership or grant
+any rights. Any permission must be obtained in advance through a separate
+written agreement signed by s3p.
+
+If the Software is hosted in a public repository, only the limited technical
+copies and displays necessarily made by the hosting service under its terms of
+service are permitted. Public availability does not grant repository visitors
+permission to use, copy, modify, or redistribute the Software. Any hosting
+service feature that cannot lawfully be restricted by this notice remains
+subject to that service's terms; no additional rights are granted.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO WARRANTIES OF MERCHANTABILITY, FITNESS
+FOR A PARTICULAR PURPOSE, TITLE, AND NON-INFRINGEMENT. IN NO EVENT SHALL THE
+COPYRIGHT HOLDER BE LIABLE FOR ANY CLAIM, DAMAGES, OR OTHER LIABILITY ARISING
+FROM, OUT OF, OR IN CONNECTION WITH THE SOFTWARE OR ITS ACCESS.
+
+All rights not expressly granted are reserved.
+
+THIRD-PARTY MATERIALS
+
+This license applies only to material owned by s3p. Third-party components,
+including stb_image, remain subject to their respective copyright notices and
+license terms. Nothing in this license restricts rights independently granted
+by those third-party licenses.
