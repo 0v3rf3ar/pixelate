@@ -24,7 +24,7 @@
 #include <unistd.h>
 #endif
 
-#define PIXELATE_VERSION_VALUE "v1.0.1"
+#define PIXELATE_VERSION_VALUE "v1.0.2"
 #define PIXELATE_DEVELOPER_VALUE "s3p"
 #define PIXELATE_GITHUB_VALUE "https://github.com/0v3rf3ar/pixelate"
 #define PIXELATE_COPYRIGHT_VALUE "Copyright (c) 2026 s3p. All rights reserved."
