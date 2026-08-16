@@ -248,14 +248,24 @@ static int rgb_to_gray(int r, int g, int b) {
 }
 
 static void render_cell(int r, int g, int b, int a, const Options *options) {
-    char character = a == 0 ? ' ' :
-        grayscale_to_ascii(rgb_to_gray(r, g, b), options);
-    if (options->block && a != 0) {
-        if (options->invert) {
-            r = 255 - r;
-            g = 255 - g;
-            b = 255 - b;
-        }
+    char character;
+    if (a == 0) {
+        if (options->color || options->block) fputs("\x1b[0m", stdout);
+        putchar(' ');
+        return;
+    }
+    if (options->block && options->invert) {
+        r = 255 - r;
+        g = 255 - g;
+        b = 255 - b;
+    }
+    if (a < 255) {
+        r = (r * a + 127) / 255;
+        g = (g * a + 127) / 255;
+        b = (b * a + 127) / 255;
+    }
+    character = grayscale_to_ascii(rgb_to_gray(r, g, b), options);
+    if (options->block) {
         printf("\x1b[48;2;%d;%d;%dm ", r, g, b);
     } else if (options->color && character != ' ') {
         printf("\x1b[38;2;%d;%d;%dm%c", r, g, b, character);
